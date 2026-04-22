@@ -301,13 +301,16 @@ textarea.input-field { resize: vertical; min-height: 88px; line-height: 1.6; }
 .stepper-track::-webkit-scrollbar { display: none; }
 
 .stepper-item {
-  display: flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 12px; border-radius: var(--radius-pill);
   font-size: 13px; font-weight: 600; cursor: pointer;
   border: none; background: transparent;
   color: var(--text-tertiary); white-space: nowrap;
   transition: all 0.2s; min-height: 40px;
+  text-decoration: none;
+  flex-shrink: 0;
 }
+.stepper-item:hover { background: var(--bg-inset); color: var(--text-primary); }
 .stepper-item.active { background: var(--accent); color: #fff; box-shadow: 0 4px 16px var(--accent-glow); }
 .stepper-item.done { color: var(--accent); background: var(--accent-light); }
 

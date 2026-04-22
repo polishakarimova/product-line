@@ -15,6 +15,7 @@ type Store = ProductLineState & {
   setWorkspaceName: (name: string) => void;
   setTheme: (theme: 'light' | 'dark' | 'pastel') => void;
   setStartMonth: (n: number) => void;
+  setCalendarYear: (y: number) => void;
   setGoals: (u: UpdaterFn<GoalsData>) => void;
   setMonthly: (u: UpdaterFn<MonthlyData>) => void;
   setSales: (u: UpdaterFn<SalesData>) => void;
@@ -50,6 +51,7 @@ export const useStore = create<Store>()(
           document.documentElement.setAttribute('data-theme', theme === 'light' ? '' : theme);
         }
       },
+      setCalendarYear: (y) => set({ calendarYear: y }),
       setStartMonth: (n) => {
         const monthNames = getMonthsFromStart(n);
         set(state => ({

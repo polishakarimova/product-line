@@ -105,6 +105,7 @@ export function createInitialState(): ProductLineState {
     workspaceName: 'Моя товарная линейка',
     theme: 'light',
     startMonth: 6,
+    calendarYear: new Date().getFullYear(),
     goals: {
       approach: 'both',
       personalGoals: [],

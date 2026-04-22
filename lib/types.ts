@@ -185,4 +185,5 @@ export interface ProductLineState {
   analytics: AnalyticsData;
   theme: 'light' | 'dark' | 'pastel';
   startMonth: number;
+  calendarYear: number;
 }
