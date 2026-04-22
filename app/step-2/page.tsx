@@ -28,6 +28,26 @@ function firstWeekday(year: number, month: number) {
   const d = new Date(year, month, 1).getDay();
   return d === 0 ? 6 : d - 1;
 }
+function toIso(d: Date) { return d.toISOString().slice(0, 10); }
+function addDays(iso: string, n: number) {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + n);
+  return toIso(d);
+}
+function diffDays(a: string, b: string) {
+  const d1 = new Date(a), d2 = new Date(b);
+  return Math.round((d2.getTime() - d1.getTime()) / 86400000);
+}
+function enumRange(a: string, b: string): string[] {
+  const result: string[] = [];
+  const cur = new Date(a <= b ? a : b);
+  const end = new Date(a <= b ? b : a);
+  while (cur <= end) {
+    result.push(toIso(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return result;
+}
 
 export default function CalendarPage() {
   const state = useStore();
@@ -40,27 +60,22 @@ export default function CalendarPage() {
   const setStartMonth = state.setStartMonth;
 
   const [editingDay, setEditingDay] = useState<string | null>(null);
-  const [multiMode, setMultiMode] = useState(false);
-  const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [bulkOpen, setBulkOpen] = useState(false);
+  const [mode, setMode] = useState<'single' | 'range'>('single');
+  const [rangeStart, setRangeStart] = useState<string>('');
+  const [rangeEnd, setRangeEnd] = useState<string>('');
 
-  // Drag to select
-  const [dragging, setDragging] = useState(false);
-  const [dragAction, setDragAction] = useState<'add' | 'remove'>('add');
-
+  // When modal opens, reset to single mode with clicked day
   useEffect(() => {
-    const up = () => setDragging(false);
-    window.addEventListener('mouseup', up);
-    window.addEventListener('touchend', up);
-    return () => {
-      window.removeEventListener('mouseup', up);
-      window.removeEventListener('touchend', up);
-    };
-  }, []);
+    if (editingDay) {
+      setMode('single');
+      setRangeStart(editingDay);
+      setRangeEnd(editingDay);
+    }
+  }, [editingDay]);
 
   const daysMap = useMemo(() => new Map(calendar.days.map(d => [d.date, d])), [calendar.days]);
 
-  const toggleType = (date: string, t: DayType) => {
+  const toggleTypeSingle = (date: string, t: DayType) => {
     setCalendar(c => {
       const existing = c.days.find(d => d.date === date);
       if (!existing) return { ...c, days: [...c.days, { date, types: [t] }] };
@@ -68,6 +83,29 @@ export default function CalendarPage() {
       if (types.length === 0 && !existing.note) return { ...c, days: c.days.filter(d => d.date !== date) };
       return { ...c, days: c.days.map(d => d.date === date ? { ...d, types } : d) };
     });
+  };
+
+  const applyTypeRange = (start: string, end: string, t: DayType) => {
+    const dates = enumRange(start, end);
+    setCalendar(c => {
+      let days = [...c.days];
+      for (const date of dates) {
+        const idx = days.findIndex(d => d.date === date);
+        if (idx === -1) days.push({ date, types: [t] });
+        else if (!days[idx].types.includes(t)) days[idx] = { ...days[idx], types: [...days[idx].types, t] };
+      }
+      return { ...c, days };
+    });
+  };
+
+  const clearTypesRange = (start: string, end: string) => {
+    const dates = new Set(enumRange(start, end));
+    setCalendar(c => ({
+      ...c,
+      days: c.days
+        .map(d => dates.has(d.date) ? { ...d, types: [] } : d)
+        .filter(d => d.types.length > 0 || d.note),
+    }));
   };
 
   const updateNote = (date: string, note: string) => {
@@ -79,80 +117,32 @@ export default function CalendarPage() {
     });
   };
 
-  const applyBulkType = (t: DayType) => {
-    setCalendar(c => {
-      const dates = Array.from(selection);
-      let days = [...c.days];
-      for (const date of dates) {
-        const idx = days.findIndex(d => d.date === date);
-        if (idx === -1) {
-          days.push({ date, types: [t] });
-        } else if (!days[idx].types.includes(t)) {
-          days[idx] = { ...days[idx], types: [...days[idx].types, t] };
-        }
-      }
-      return { ...c, days };
-    });
-  };
-
-  const clearBulkTypes = () => {
-    setCalendar(c => ({
-      ...c,
-      days: c.days.filter(d => !selection.has(d.date) || d.note).map(d =>
-        selection.has(d.date) ? { ...d, types: [] } : d
-      ),
-    }));
-  };
-
-  const handleDayMouseDown = (dateStr: string) => {
-    if (!multiMode) return;
-    const on = selection.has(dateStr);
-    setDragAction(on ? 'remove' : 'add');
-    setDragging(true);
-    setSelection(s => {
-      const next = new Set(s);
-      if (on) next.delete(dateStr); else next.add(dateStr);
-      return next;
-    });
-  };
-  const handleDayMouseEnter = (dateStr: string) => {
-    if (!multiMode || !dragging) return;
-    setSelection(s => {
-      const next = new Set(s);
-      if (dragAction === 'add') next.add(dateStr); else next.delete(dateStr);
-      return next;
-    });
-  };
-  const handleDayClick = (dateStr: string) => {
-    if (multiMode) {
-      setSelection(s => {
-        const next = new Set(s);
-        if (next.has(dateStr)) next.delete(dateStr); else next.add(dateStr);
-        return next;
-      });
+  const onTypeClick = (t: DayType) => {
+    if (!editingDay) return;
+    if (mode === 'single') {
+      toggleTypeSingle(editingDay, t);
     } else {
-      setEditingDay(dateStr);
+      if (!rangeStart || !rangeEnd) return;
+      applyTypeRange(rangeStart, rangeEnd, t);
     }
   };
 
-  const selectWeekends = () => {
-    const set = new Set<string>();
-    for (let i = 0; i < 12; i++) {
-      const m = (startMonth + i) % 12;
-      const y = calendarYear + Math.floor((startMonth + i) / 12);
-      const dim = daysInMonth(y, m);
-      for (let d = 1; d <= dim; d++) {
-        const dt = new Date(y, m, d);
-        const wd = dt.getDay();
-        if (wd === 0 || wd === 6) {
-          set.add(`${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
-        }
-      }
+  const onClear = () => {
+    if (!editingDay) return;
+    if (mode === 'single') {
+      setCalendar(c => ({
+        ...c,
+        days: c.days.map(d => d.date === editingDay ? { ...d, types: [] } : d).filter(d => d.types.length > 0 || d.note),
+      }));
+    } else {
+      clearTypesRange(rangeStart, rangeEnd);
     }
-    setSelection(set);
   };
 
   const yearOptions = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 1 + i);
+
+  const currentDay = editingDay ? daysMap.get(editingDay) : null;
+  const rangeCount = mode === 'range' && rangeStart && rangeEnd ? Math.abs(diffDays(rangeStart, rangeEnd)) + 1 : 0;
 
   return (
     <div className="page-shell">
@@ -177,26 +167,7 @@ export default function CalendarPage() {
             {MONTH_NAMES_RU.map((m, i) => <option key={i} value={i}>{m}</option>)}
           </select>
         </div>
-        <div style={{ flex: 1 }} />
-        <button
-          className={multiMode ? 'btn-primary' : 'btn-secondary'}
-          onClick={() => { setMultiMode(m => !m); setSelection(new Set()); }}
-          style={{ minHeight: 38 }}
-        >
-          {multiMode ? '✓ Режим выбора' : '📌 Выбрать несколько'}
-        </button>
       </div>
-
-      {/* Multi-select panel */}
-      {multiMode && (
-        <div className="stat-card-glass" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Выбрано: <span className="tabular" style={{ color: 'var(--accent)' }}>{selection.size}</span></span>
-          <div style={{ flex: 1, minWidth: 12 }} />
-          <button className="btn-ghost" onClick={selectWeekends}>Авто: выходные за год</button>
-          <button className="btn-ghost" onClick={() => setSelection(new Set())} disabled={selection.size === 0}>Сбросить</button>
-          <button className="btn-primary" onClick={() => setBulkOpen(true)} disabled={selection.size === 0}>Применить тип →</button>
-        </div>
-      )}
 
       {/* Legend */}
       <div className="card" style={{ padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -208,7 +179,7 @@ export default function CalendarPage() {
       </div>
 
       {/* 12 мини-календарей */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 40, userSelect: multiMode ? 'none' : 'auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 40 }}>
         {Array.from({ length: 12 }, (_, i) => {
           const m = (startMonth + i) % 12;
           const y = calendarYear + Math.floor((startMonth + i) / 12);
@@ -227,26 +198,26 @@ export default function CalendarPage() {
                   const day = daysMap.get(dateStr);
                   const firstType = day?.types[0];
                   const meta = firstType ? DAY_TYPE_META[firstType] : null;
-                  const isSel = selection.has(dateStr);
                   return (
                     <button
                       key={idx}
-                      onMouseDown={() => handleDayMouseDown(dateStr)}
-                      onMouseEnter={() => handleDayMouseEnter(dateStr)}
-                      onClick={() => handleDayClick(dateStr)}
+                      onClick={() => setEditingDay(dateStr)}
                       style={{
                         aspectRatio: '1',
-                        border: isSel ? '2px solid var(--accent)' : 'none',
+                        border: 'none',
                         borderRadius: 8,
-                        background: isSel ? 'var(--accent-light)' : (meta?.bg || 'transparent'),
-                        color: isSel ? 'var(--accent)' : (meta?.color || 'var(--text-primary)'),
+                        background: meta?.bg || 'transparent',
+                        color: meta?.color || 'var(--text-primary)',
                         fontSize: 12,
-                        fontWeight: day?.types.length || isSel ? 700 : 500,
+                        fontWeight: day?.types.length ? 700 : 500,
                         cursor: 'pointer',
-                        transition: 'background 0.1s, border 0.1s',
+                        transition: 'background 0.15s, transform 0.1s',
                         minHeight: 32,
                         position: 'relative',
                       }}
+                      onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+                      onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                     >
                       {n}
                       {day && day.types.length > 1 && (
@@ -261,73 +232,129 @@ export default function CalendarPage() {
         })}
       </div>
 
-      {/* Single-day editor */}
-      {editingDay && !multiMode && (
-        <Sheet open={!!editingDay} onClose={() => setEditingDay(null)} title={editingDay}>
-          <div style={{ marginBottom: 20 }}>
-            <label className="input-label">Тип дня (можно несколько)</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {Object.entries(DAY_TYPE_META).map(([k, m]) => {
-                const d = daysMap.get(editingDay);
-                const active = d?.types.includes(k as DayType) || false;
-                return (
-                  <button
-                    key={k}
-                    className="list-item"
-                    style={{
-                      border: 'none', width: '100%',
-                      background: active ? m.bg : 'var(--bg-card)',
-                      textAlign: 'left', cursor: 'pointer', borderRadius: 8,
-                      color: active ? m.color : 'var(--text-primary)',
-                    }}
-                    onClick={() => toggleType(editingDay, k as DayType)}
-                  >
-                    <span style={{ flex: 1 }}>{m.label}</span>
-                    {active && <span>✓</span>}
-                  </button>
-                );
-              })}
-            </div>
+      {/* Day editor (single / range) */}
+      {editingDay && (
+        <Sheet open={!!editingDay} onClose={() => setEditingDay(null)} title={mode === 'single' ? `${editingDay}` : 'Несколько дней'}>
+          {/* Переключатель single / range */}
+          <div className="segmented" style={{ marginBottom: 16, display: 'flex', width: '100%' }}>
+            <button
+              className={`segmented-item ${mode === 'single' ? 'active' : ''}`}
+              style={{ flex: 1 }}
+              onClick={() => setMode('single')}
+            >
+              Один день
+            </button>
+            <button
+              className={`segmented-item ${mode === 'range' ? 'active' : ''}`}
+              style={{ flex: 1 }}
+              onClick={() => setMode('range')}
+            >
+              Промежуток / несколько
+            </button>
           </div>
-          <div>
-            <label className="input-label">Описание</label>
-            <textarea
-              className="input-field"
-              placeholder="Что запланировано на этот день?"
-              value={daysMap.get(editingDay)?.note || ''}
-              onChange={(e) => updateNote(editingDay, e.target.value)}
-              rows={3}
-            />
-          </div>
-        </Sheet>
-      )}
 
-      {/* Bulk editor */}
-      {bulkOpen && (
-        <Sheet open onClose={() => setBulkOpen(false)} title={`Применить к ${selection.size} дням`}>
-          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>
-            Выбери тип — он добавится ко всем выбранным дням. Существующие типы сохранятся.
-          </p>
+          {/* Range pickers */}
+          {mode === 'range' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <label className="input-label">С</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="input-label">По</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => { setRangeStart(editingDay); setRangeEnd(addDays(editingDay, 6)); }}>+ неделя</button>
+                <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => { setRangeStart(editingDay); setRangeEnd(addDays(editingDay, 13)); }}>+ 2 недели</button>
+                <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => {
+                  const d = new Date(editingDay);
+                  const lastDay = daysInMonth(d.getFullYear(), d.getMonth());
+                  setRangeStart(editingDay);
+                  setRangeEnd(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+                }}>до конца месяца</button>
+              </div>
+              {rangeCount > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: 'var(--accent-light)', color: 'var(--accent)', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
+                  Будет применено к {rangeCount} {rangeCount === 1 ? 'дню' : rangeCount < 5 ? 'дням' : 'дням'}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Current types indicator (только для single) */}
+          {mode === 'single' && currentDay && currentDay.types.length > 0 && (
+            <div style={{ marginBottom: 12, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {currentDay.types.map(t => (
+                <span key={t} className="badge" style={{ background: DAY_TYPE_META[t].bg, color: DAY_TYPE_META[t].color }}>
+                  {DAY_TYPE_META[t].label} ✓
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Type list */}
+          <label className="input-label" style={{ marginBottom: 8 }}>
+            {mode === 'single' ? 'Тип дня (можно несколько — тап = вкл/выкл)' : 'Выбери тип — применится ко всем дням промежутка'}
+          </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
-            {Object.entries(DAY_TYPE_META).map(([k, m]) => (
-              <button
-                key={k}
-                className="list-item"
-                style={{ border: 'none', width: '100%', background: m.bg, textAlign: 'left', cursor: 'pointer', borderRadius: 8, color: m.color, fontWeight: 700 }}
-                onClick={() => { applyBulkType(k as DayType); setBulkOpen(false); setMultiMode(false); setSelection(new Set()); }}
-              >
-                <span style={{ flex: 1 }}>{m.label}</span>
-                <span>→</span>
-              </button>
-            ))}
+            {Object.entries(DAY_TYPE_META).map(([k, m]) => {
+              const active = mode === 'single' && currentDay?.types.includes(k as DayType);
+              return (
+                <button
+                  key={k}
+                  className="list-item"
+                  style={{
+                    border: 'none', width: '100%',
+                    background: active ? m.bg : 'var(--bg-card)',
+                    textAlign: 'left', cursor: 'pointer', borderRadius: 8,
+                    color: active ? m.color : 'var(--text-primary)',
+                    fontWeight: active ? 700 : 500,
+                  }}
+                  onClick={() => onTypeClick(k as DayType)}
+                >
+                  <span style={{ flex: 1 }}>{m.label}</span>
+                  {active && <span>✓</span>}
+                  {mode === 'range' && <span style={{ color: 'var(--text-tertiary)', fontSize: 18 }}>→</span>}
+                </button>
+              );
+            })}
           </div>
+
+          {/* Clear button */}
           <button
             className="btn-secondary"
-            style={{ width: '100%', color: '#991B1B' }}
-            onClick={() => { clearBulkTypes(); setBulkOpen(false); setMultiMode(false); setSelection(new Set()); }}
+            style={{ width: '100%', color: '#991B1B', marginBottom: 16 }}
+            onClick={onClear}
           >
-            Очистить все типы у выбранных дней
+            {mode === 'single' ? 'Очистить типы у этого дня' : `Очистить типы у ${rangeCount} дней`}
           </button>
+
+          {/* Description — only for single */}
+          {mode === 'single' && (
+            <div>
+              <label className="input-label">Описание</label>
+              <textarea
+                className="input-field"
+                placeholder="Что запланировано на этот день?"
+                value={currentDay?.note || ''}
+                onChange={(e) => updateNote(editingDay, e.target.value)}
+                rows={3}
+              />
+            </div>
+          )}
         </Sheet>
       )}
     </div>
