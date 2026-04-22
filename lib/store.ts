@@ -121,7 +121,25 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'product-line-storage',
-      version: 1,
+      version: 2,
+      migrate: (persisted: unknown, fromVersion: number) => {
+        const p = (persisted || {}) as Record<string, unknown>;
+        const initial = createInitialState() as unknown as Record<string, unknown>;
+        // Fill any missing fields from initial state
+        for (const key of Object.keys(initial)) {
+          if (p[key] === undefined) p[key] = initial[key];
+        }
+        // v2: ensure calendarYear present
+        if (typeof p.calendarYear !== 'number') p.calendarYear = new Date().getFullYear();
+        void fromVersion;
+        return p as unknown as ProductLineState;
+      },
+      merge: (persisted: unknown, current) => {
+        // Deep-ish merge: use current (fresh initial) as base, overlay persisted
+        const base = { ...current };
+        const p = (persisted || {}) as Partial<ProductLineState>;
+        return { ...base, ...p };
+      },
     }
   )
 );

@@ -54,9 +54,10 @@ export default function CalendarPage() {
   const calendar = state.calendar;
   const setCalendar = state.setCalendar;
   const intro = STEP_INTROS['step-2'];
-  const calendarYear = state.calendarYear;
+  const calendarYear = (typeof state.calendarYear === 'number' && !isNaN(state.calendarYear))
+    ? state.calendarYear : new Date().getFullYear();
   const setCalendarYear = state.setCalendarYear;
-  const startMonth = state.startMonth;
+  const startMonth = (typeof state.startMonth === 'number' && !isNaN(state.startMonth)) ? state.startMonth : 0;
   const setStartMonth = state.setStartMonth;
 
   const [editingDay, setEditingDay] = useState<string | null>(null);
